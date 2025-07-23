@@ -1,0 +1,26 @@
+From 104860b6b131d8c45345dfd5c446afe11bca4d18 Mon Sep 17 00:00:00 2001
+From: Anatol Pomozov <anatol.pomozov@gmail.com>
+Date: Fri, 25 Aug 2017 23:30:34 +0000
+Subject: [PATCH] Include libusb-1.0/libusb.h instead of libusb/libusb.h
+
+---
+ client/usb_libusb.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/client/usb_libusb.cpp b/client/usb_libusb.cpp
+index e0b0104a..bcfb03af 100644
+--- a/client/usb_libusb.cpp
++++ b/client/usb_libusb.cpp
+@@ -36,7 +36,11 @@
+ #include <unordered_map>
+ #include <vector>
+ 
++#ifdef ANDROID_TOOLS_USE_BUNDLED_LIBUSB
+ #include <libusb/libusb.h>
++#else
++#include <libusb-1.0/libusb.h>
++#endif
+ 
+ #include <android-base/file.h>
+ #include <android-base/logging.h>
+

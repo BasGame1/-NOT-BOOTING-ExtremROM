@@ -1,0 +1,117 @@
+version: '{build}'
+
+skip_tags: true
+skip_commits:
+  files:
+  - README.md
+  - Changelog.md
+  - Contributors.asciidoc
+  - art/**
+  - doc/**
+
+environment:
+  # Disable the winfsp-tests built-in exception filter to allow WER to collect dumps.
+  WINFSP_TESTS_EXCEPTION_FILTER_DISABLE: 1
+
+  matrix:
+  - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+    CONFIGURATION: Debug
+    TESTING: Func
+    DOCKER_TESTING: None
+  - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+    CONFIGURATION: Release
+    TESTING: Func
+    DOCKER_TESTING: None
+  - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
+    CONFIGURATION: Release
+    TESTING: Func
+    DOCKER_TESTING: None
+  - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+    CONFIGURATION: Release
+    TESTING: Func
+    DOCKER_TESTING: Func
+  #- CONFIGURATION: Release
+  #  TESTING: Avast
+  #  DOCKER_TESTING: None
+  #- CONFIGURATION: Release
+  #  TESTING: Perf
+  #  DOCKER_TESTING: None
+
+init:
+- ps: iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
+
+install:
+# Hack to make WDK 1903 work on VS2015.
+# See https://github.com/appveyor-tests/WDK-10.0.14393.0/blob/31cf12217fe0c92b218c70d7027dfe145be4f4cb/appveyor.yml#L7
+- ps: |
+    if ($env:APPVEYOR_BUILD_WORKER_IMAGE -eq "Visual Studio 2015") {
+      [xml]$targets = get-content "C:\Program Files (x86)\Windows Kits\10\build\WindowsDriver.Common.targets"
+      $usingTask = $targets.ChildNodes[1].UsingTask | ? {$_.TaskName -eq "ValidateNTTargetVersion"}
+      $usingTask.AssemblyFile = '$(WDKContentRoot)build\bin\Microsoft.DriverKit.Build.Tasks.16.0.dll'
+      $targets.Save("C:\Program Files (x86)\Windows Kits\10\build\WindowsDriver.Common.targets")
+      Add-AppveyorMessage "Hack to make WDK 1903 work on VS2015"
+    }
+# Install .NET SDK on VS2015 image
+- ps: |
+    if ($env:APPVEYOR_BUILD_WORKER_IMAGE -eq "Visual Studio 2015") {
+        & ([scriptblock]::Create((New-Object System.Net.WebClient).DownloadString('https://dot.net/v1/dotnet-install.ps1'))) -InstallDir "C:\dotnet"
+    }
+# Submodules
+- git submodule update --init --recursive
+# Kernel and user mode dumps
+- if exist %SystemRoot%\memory.dmp del %SystemRoot%\memory.dmp
+- if exist C:\projects\LocalDumps rmdir /s/q C:\projects\LocalDumps
+- mkdir C:\projects\LocalDumps
+- reg add "HKLM\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpFolder /t REG_EXPAND_SZ /d C:\projects\LocalDumps /f
+- reg add "HKLM\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps" /v DumpType /t REG_DWORD /d 2 /f
+# Boot configuration
+- appveyor AddMessage "Change boot configuration and reboot" -Category Information
+- bcdedit /set testsigning on
+- if %TESTING%==Func verifier /standard /driver winfsp-x64.sys & exit 0
+- ps: Restart-Computer -Force
+- ps: Start-Sleep -s 60
+
+build_script:
+- appveyor AddMessage "Reboot complete" -Category Information
+# build cygfuse
+#- C:\cygwin64\setup-x86_64.exe -qnNd -P cygport
+#- C:\cygwin64\bin\bash --login -c "make -C '%CD%\opt\cygfuse' dist"
+#- C:\cygwin\setup-x86.exe -qnNd -P cygport
+#- C:\cygwin\bin\bash --login -c "make -C '%CD%\opt\cygfuse' dist"
+# remove ARM64 project configurations to build in VS2015/VS2017
+- if "%APPVEYOR_BUILD_WORKER_IMAGE%"=="Visual Studio 2015" tools\gensrc\remove-build-arm64.bat
+- if "%APPVEYOR_BUILD_WORKER_IMAGE%"=="Visual Studio 2017" tools\gensrc\remove-build-arm64.bat
+# remove .NET library from solution for VS2015 and use the .NET SDK instead
+- if "%APPVEYOR_BUILD_WORKER_IMAGE%"=="Visual Studio 2015" tools\gensrc\remove-build-dotnet.bat build\VStudio
+- if "%APPVEYOR_BUILD_WORKER_IMAGE%"=="Visual Studio 2015" set PATH=C:\dotnet;%PATH%
+# build winfsp
+- tools\build.bat %CONFIGURATION%
+
+test_script:
+- choco install winfsp -s build\VStudio\build\%CONFIGURATION% -y --pre
+- if %TESTING%==Func appveyor DownloadFile https://winfsp.dev/assets/pvt/Test.Filter.Driver.zip.001
+- if %TESTING%==Func appveyor DownloadFile https://winfsp.dev/assets/pvt/Test.Filter.Driver.zip.002
+- if %TESTING%==Func 7z x Test.Filter.Driver.zip.001
+- if %TESTING%==Func start /wait msiexec /i "Test.Filter.Driver\HCK Filter.Driver Content-x86_en-us.msi" /qn
+- if %TESTING%==Func tools\nmake-ext-test.bat %CONFIGURATION%
+#- ps: . "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\gflags.exe" /k +spp *
+- if %DOCKER_TESTING%==Func docker run -d --name=Container0 --isolation=process "-vC:\Program Files (x86)\WinFsp:C:\Program Files (x86)\WinFsp:RO" "-vC:\projects:C:\projects:RO" mcr.microsoft.com/windows/servercore:ltsc2019 cmd.exe /c waitfor 7BF47D72F6664550B03248ECFE77C7DD
+- if %TESTING%==Func tools\run-tests.bat %CONFIGURATION%
+- if %TESTING%==Func tools\run-tests.bat %CONFIGURATION% ifstest
+- if %TESTING%==Func tools\run-tests.bat %CONFIGURATION% sample
+- if %TESTING%==Func tools\run-tests.bat %CONFIGURATION% compat
+- if %TESTING%==Avast choco install avastfreeantivirus && fltmc instances -v "C:"
+- if %TESTING%==Avast tools\run-tests.bat %CONFIGURATION% avast-tests
+- if %TESTING%==Perf tools\run-perf-tests.bat %CONFIGURATION% baseline > perf-tests.csv && type perf-tests.csv & appveyor PushArtifact perf-tests.csv
+- if %DOCKER_TESTING%==Func docker exec Container0 cmd.exe /c C:\projects\winfsp\build\VStudio\build\%CONFIGURATION%\winfsp-tests-x64.exe +*
+#- if %DOCKER_TESTING%==Func docker run -d --name=Container1 --isolation=process "-vC:\Program Files (x86)\WinFsp:C:\Program Files (x86)\WinFsp:RO" "-vC:\projects:C:\projects:RO" mcr.microsoft.com/windows/servercore:ltsc2019 cmd.exe /c waitfor 7BF47D72F6664550B03248ECFE77C7DD
+#- if %DOCKER_TESTING%==Func docker exec Container1 cmd.exe /c C:\projects\winfsp\build\VStudio\build\%CONFIGURATION%\winfsp-tests-x64.exe +*
+- choco uninstall winfsp -y
+
+on_finish:
+- verifier /query
+- if exist %SystemRoot%\memory.dmp (7z a km.dmp.zip %SystemRoot%\memory.dmp && appveyor PushArtifact km.dmp.zip)
+- dir /a/b C:\projects\LocalDumps | findstr "^" && (7z a um.dmp.zip C:\projects\LocalDumps && appveyor PushArtifact um.dmp.zip) || ver>nul
+- if exist *.dmp.zip (7z a sym.pdb.zip build\VStudio\build\%CONFIGURATION%\*.pdb && appveyor PushArtifact sym.pdb.zip)
+- if exist *.dmp.zip exit 1
+#- ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))

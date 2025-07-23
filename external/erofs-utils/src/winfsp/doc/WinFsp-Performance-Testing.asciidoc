@@ -1,0 +1,163 @@
+= Performance Testing
+
+This document presents results from performance testing of WinFsp. These results show that WinFsp has excellent performance that rivals or exceeds that of NTFS in many file system scenarios. Some further optimization opportunities are also identified.
+
+== Summary
+
+Two reference WinFsp file systems, MEMFS and NTPTFS, are compared against NTFS in multiple file system scenarios. MEMFS is an in-memory file system, whereas NTPTFS (NT passthrough file system) is a file system that passes all file system requests onto an underlying NTFS file system.
+
+The test results are summarized in the charts below. The "File Tests" chart summarizes performance of file path namespace manipulations (e.g. creating/deleting files, opening files, listing files, etc.). The "Read/Write Tests" chart summarizes performance of file I/O (e.g. cached read/write, memory mapped I/O, etc.)
+
+The important takeaways are:
+
+- MEMFS is faster than NTFS is most scenarios. This is a somewhat expected result because MEMFS is an in-memory file system, whereas NTFS is a disk file system. However it shows that WinFsp does not add significant overhead and user mode file systems can be fast.
+
+- MEMFS and NTPTFS both outperform NTFS when doing cached file I/O! This is a significant result because doing file I/O is the primary purpose of a file system. It is also an unexpected result at least in the case of NTPTFS, since NTPTFS runs on top of NTFS.
+
+The following sections present the testing methodology used, provide instructions for independent verification, describe the individual tests in detail and provide an explanation for the observed results.
+
+[cols="a,a", frame=none, grid=none]
+|===
+|image::WinFsp-Performance-Testing/file_tests.png[]
+|image::WinFsp-Performance-Testing/rdwr_tests.png[]
+|===
+
+== Methodology
+
+A test run consists of performance tests run one after the other (in sequence). The test driver is careful to clear system caches before each test to minimize timing interference between the tests (because we would not want operations performed in test A to affect measurements of test B). Tests are run on an idle computer to minimize interference from third party components.
+
+Each test run is run a number of times (default: 3) against each file system and the smallest time value for the particular test and file system is chosen. The assumption is that even in a seemingly idle system there is some activity that affects the results; the smallest value is the preferred one to use because it reflects the time when there is less or no other system activity.
+
+For the NTFS file system we use the default configuration as it ships with Windows (e.g. 8.3 names are enabled). For the NTPTFS file system we disable anti-virus checks on the lower file system, because it makes no sense for NTPTFS to pay for virus checking twice. (Consider an NTPTFS file system that exposes a lower NTFS directory `C:\t` as an upper drive `X:`. Such a file system would have virus checking applied on file accesses to `X:`, but also to its own accesses to `C:\t`. This is unnecessary and counter-productive.)
+
+Note that the sequential nature of the tests represents a worst case scenario for WinFsp. The reason is that a single file system operation may require a roundtrip to the user mode file system and such a roundtrip requires two process context switches (i.e. address space and thread switches): one context switch to carry the file system request to the user mode file system and one context switch to carry the response back to the originating process. WinFsp performs better when multiple processes issue file system operations concurrently, because multiple requests are queued in its internal queues and multiple requests can be handled in a single context switch.
+
+For more information refer to the link:WinFsp-Performance-Testing/WinFsp-Performance-Testing-Analysis.ipynb[Performance Testing Analysis] notebook. This notebook together with the `run-all-perf-tests.bat` script can be used for replication and independent verification of the results presented in this document.
+
+The test environment for the results presented in this document is as follows:
+----
+Dell XPS 13 9300
+Intel Core i7-1065G7 CPU
+32GB 3733MHz LPDDR4x RAM
+2TB M.2 PCIe NVMe SSD
+
+Windows 11 (64-bit) Version 21H2 (OS Build 22000.258)
+WinFsp 2022+ARM64 Beta3 (v1.11B3)
+----
+
+== Results
+
+In the charts below we use consistent coloring and markers to quickly identify a file system. Blue and the letter 'N' is used for NTFS, orange and the letter 'M' is used for MEMFS, green and the letter 'P' is used for NTPTFS.
+
+In bar charts shorter bars are better. In plot charts lower times are better. (Better means that the file system is faster).
+
+
+=== File Tests
+
+File tests are tests that are performed against the hierarchical path namespace of a file system. These tests measure the performance of creating, opening, overwriting, listing and deleting files.
+
+Measured times for these tests are normalized against the NTFS time (so that the NTFS value is always 1). This allows for easy comparison between file systems across all file tests.
+
+MEMFS has the best performance in most of these tests. NTFS performs better in some tests; these are discussed further below. NTPTFS is last as it has the overhead of both NTFS and WinFsp.
+
+image::WinFsp-Performance-Testing/file_tests.png[]
+
+==== file_create_test
+
+This test measures the performance of creating new files using `CreateFileW(CREATE_NEW)` / `CloseHandle`. MEMFS has the best performance here, while NTFS has worse performance as it has to update its data structures on disk.
+
+image::WinFsp-Performance-Testing/file_create_test.png[]
+
+==== file_open_test
+
+This test measures the performance of opening different files using `CreateFileW(OPEN_EXISTING)` / `CloseHandle`. MEMFS again has the best performance, followed by NTFS and then NTPTFS.
+
+image::WinFsp-Performance-Testing/file_open_test.png[]
+
+==== iter.file_open_test
+
+This test measures the performance of opening the same files repeatedly using `CreateFileW(OPEN_EXISTING)` / `CloseHandle`. NTFS has the best performance, with MEMFS following and NTPTFS a distant third.
+
+This test shows that NTFS does a better job than WinFsp when re-opening a file. The problem is that in most cases the WinFsp API design requires a round-trip to the user mode file system when opening a file. Improving WinFsp performance here would likely require substantial changes to the WinFsp API.
+
+image::WinFsp-Performance-Testing/iter.file_open_test.png[]
+
+==== file_overwrite_test
+
+This test measures the performance of overwriting files using `CreateFileW(CREATE_ALWAYS)` / `CloseHandle`. MEMFS is fastest, followed by NTFS and then NTPTFS.
+
+image::WinFsp-Performance-Testing/file_overwrite_test.png[]
+
+==== file_list_test
+
+This test measures the performance of listing files using `FindFirstFileW` / `FindNextFile` / `FindClose`. MEMFS is again fastest with NTFS and NTPTFS following.
+
+It should be noted that NTFS can perform better in this test, if 8.3 (i.e. short) names are disabled (see `fsutil 8dot3name`). However Microsoft ships NTFS with 8.3 names enabled by default and these tests are performed against the default configuration of NTFS.
+
+image::WinFsp-Performance-Testing/file_list_test.png[]
+
+==== file_list_single_test
+
+This test measures the performance of listing a single file using `FindFirstFileW` / `FindNextFile` / `FindClose`. NTFS has again best performance, with MEMFS following and NTPTFS a distant third.
+
+This test shows that NTFS does a better job than WinFsp at caching directory data. Improving WinFsp performance here would likely require a more aggressive and/or intelligent directory caching scheme than the one used now.
+
+image::WinFsp-Performance-Testing/file_list_single_test.png[]
+
+==== file_delete_test
+
+This test measures the performance of deleting files using `DeleteFileW`. MEMFS has the best performance, followed by NTFS and NTPTFS.
+
+image::WinFsp-Performance-Testing/file_delete_test.png[]
+
+=== Read/Write Tests
+
+Read/write tests are tests that measure the performance of cached, non-cached and memory-mapped I/O.
+
+Measured times for these tests are normalized against the NTFS time (so that the NTFS value is always 1). This allows for easy comparison between file systems across all read/write tests.
+
+MEMFS and NTPTFS outperform NTFS in cached and non-cached I/O tests and have equal performance to NTFS in memory mapped I/O tests. This result may be somewhat counter-intuitive (especially for NTPTFS), but the reasons are explained below.
+
+image::WinFsp-Performance-Testing/rdwr_tests.png[]
+
+==== rdwr_cc_read_page_test
+
+This test measures the performance of cached `ReadFile` with 1 page reads. MEMFS and NTPTFS outperform NTFS by a considerable margin.
+
+Cached reads are satisfied from cache and they can effectively be a "memory copy" from the operating system's buffers into the `ReadFile` buffer. Both WinFsp and NTFS implement NT "fast I/O" and one explanation for the test's result is that the WinFsp "fast I/O" implementation is more performant than the NTFS one.
+
+An alternative explanation is that MEMFS and NTPTFS are simply faster in filling the file system cache when a cache miss occurs. While this may be true for MEMFS (because it maintains file data in user mode memory), it cannot be true for NTPTFS. Recall that the test driver clears system caches prior to running every test, which means that when NTPTFS tries to fill its file system cache for the upper file system, it has to access lower file system data from disk (the same as NTFS).
+
+image::WinFsp-Performance-Testing/rdwr_cc_read_page_test.png[]
+
+==== rdwr_cc_write_page_test
+
+This test measures the performance of cached `WriteFile` with 1 page writes. As in the read case, MEMFS and NTPTFS outperform NTFS albeit with a smaller margin.
+
+Similar comments as for `rdwr_cc_read_page_test` apply.
+
+image::WinFsp-Performance-Testing/rdwr_cc_write_page_test.png[]
+
+==== rdwr_nc_read_page_test
+
+This test measures the performance of non-cached `ReadFile` with 1 page reads. Although MEMFS and NTPTFS have better performance than NTFS, this result is not as interesting, because MEMFS is an in-memory file system and NTPTFS currently implements only cached I/O (this may change in the future). However we include this test for completeness.
+
+image::WinFsp-Performance-Testing/rdwr_nc_read_page_test.png[]
+
+==== rdwr_nc_write_page_test
+
+This test measures the performance of non-cached `WriteFile` with 1 page writes. Again MEMFS and NTPTFS have better performance than NTFS, but similar comments as for `rdwr_nc_read_page_test` apply.
+
+image::WinFsp-Performance-Testing/rdwr_nc_write_page_test.png[]
+
+==== mmap_read_test
+
+This test measures the performance of memory mapped reads. NTFS and WinFsp have identical performance here, which actually makes sense because memory mapped I/O is effectively cached by buffers that are mapped into the address space of the process doing the I/O.
+
+image::WinFsp-Performance-Testing/mmap_read_test.png[]
+
+==== mmap_write_test
+
+This test measures the performance of memory mapped writes. NTFS and WinFsp have again identical performance here. Similar comments as for `mmap_read_test` apply.
+
+image::WinFsp-Performance-Testing/mmap_write_test.png[]

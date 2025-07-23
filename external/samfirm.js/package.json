@@ -1,0 +1,53 @@
+{
+  "name": "samfirm",
+  "version": "0.3.0",
+  "description": "A streaming downloader, decryptor and extractor of Samsung firmware",
+  "keywords": [
+    "samsung",
+    "firmware",
+    "samfirm"
+  ],
+  "author": "Jesse Chan",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jesec/samfirm.js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jesec/samfirm.js/issues"
+  },
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "samfirm": "dist/index.js"
+  },
+  "scripts": {
+    "build": "ncc build index.ts -m -t",
+    "check-source-formatting": "prettier -c .",
+    "check-types": "tsc --noEmit",
+    "format-source": "prettier -w .",
+    "lint": "eslint --max-warnings 0 --ext .ts .",
+    "prepack": "rm -rf dist && npm run build",
+    "start": "ts-node-dev --transpile-only index.ts"
+  },
+  "devDependencies": {
+    "@types/cli-progress": "^3.11.0",
+    "@types/node": "^20.8.3",
+    "@types/unzip-stream": "^0.3.2",
+    "@types/yargs": "^17.0.28",
+    "@typescript-eslint/eslint-plugin": "^6.7.4",
+    "@typescript-eslint/parser": "^6.7.4",
+    "@vercel/ncc": "^0.38.0",
+    "axios": "^1.5.1",
+    "cli-progress": "^3.11.2",
+    "eslint": "^8.21.0",
+    "eslint-config-prettier": "^9.0.0",
+    "fast-xml-parser": "^4.0.9",
+    "prettier": "^3.0.3",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.2.2",
+    "unzip-stream": "^0.3.1",
+    "yargs": "^17.7.2"
+  }
+}

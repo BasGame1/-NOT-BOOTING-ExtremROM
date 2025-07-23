@@ -1,0 +1,135 @@
+package {package_name};
+{{ -if not is_test_mode }}
+{{ if not library_exported- }}
+// TODO(b/303773055): Remove the annotation after access issue is resolved.
+import android.compat.annotation.UnsupportedAppUsage;
+{{ -endif }}
+
+{{ -if runtime_lookup_required }}
+import android.provider.DeviceConfig;
+import android.provider.DeviceConfig.Properties;
+
+
+{{ -if not library_exported }}
+{{ -if allow_instrumentation }}
+import android.aconfig.storage.StorageInternalReader;
+import android.util.Log;
+
+import java.io.File;
+{{ -endif }}
+{{ -endif }}
+
+{{ -endif }}
+/** @hide */
+public final class FeatureFlagsImpl implements FeatureFlags \{
+{{ -if runtime_lookup_required }}
+{{ -for namespace_with_flags in namespace_flags }}
+    private static boolean {namespace_with_flags.namespace}_is_cached = false;
+{{ -endfor- }}
+
+{{ for flag in flag_elements }}
+{{- if flag.is_read_write }}
+    private static boolean {flag.method_name} = {flag.default_value};
+{{ -endif }}
+{{ -endfor }}
+{{ -if not library_exported }}
+{{ -if allow_instrumentation }}
+    StorageInternalReader reader;
+    boolean readFromNewStorage;
+
+    private final static String TAG = "AconfigJavaCodegen";
+
+    public FeatureFlagsImpl() \{
+        File file = new File("/metadata/aconfig_test_missions/mission_1");
+        if (file.exists()) \{
+            readFromNewStorage = true;
+            try \{
+                reader = new StorageInternalReader("{container}", "{package_name}");
+            } catch (Exception e) \{
+                reader = null;
+            }
+        }
+    }
+{{ -endif }}
+{{ -endif }}
+{{ for namespace_with_flags in namespace_flags }}
+    private void load_overrides_{namespace_with_flags.namespace}() \{
+        try \{
+{{ -if not library_exported }}
+{{ -if allow_instrumentation }}
+            boolean val;
+{{ -endif }}
+{{ -endif }}
+            Properties properties = DeviceConfig.getProperties("{namespace_with_flags.namespace}");
+{{ -for flag in namespace_with_flags.flags }}
+{{ -if flag.is_read_write }}
+            {flag.method_name} =
+                properties.getBoolean(Flags.FLAG_{flag.flag_name_constant_suffix}, {flag.default_value});
+{{ -if not library_exported }}
+{{ -if allow_instrumentation }}
+            if (readFromNewStorage && reader != null) \{
+                try \{
+                    val = reader.getBooleanFlagValue({flag.flag_offset});
+                    if (val == {flag.method_name}) \{
+                        Log.i(TAG, "success: {flag.method_name} value matches");
+                    } else \{
+                        Log.i(TAG, String.format(
+                            "error: {flag.method_name} value mismatch, new storage value is %s, old storage value is %s",
+                            val, {flag.method_name}));
+                    }
+                } catch (Exception e) \{
+                    Log.e(TAG, "error: failed to read flag value of {flag.method_name}", e);
+                }
+            }
+{{ -endif }}
+{{ -endif }}
+{{ -endif }}
+{{ -endfor }}
+        } catch (NullPointerException e) \{
+            throw new RuntimeException(
+                "Cannot read value from namespace {namespace_with_flags.namespace} "
+                + "from DeviceConfig. It could be that the code using flag "
+                + "executed before SettingsProvider initialization. Please use "
+                + "fixed read-only flag by adding is_fixed_read_only: true in "
+                + "flag declaration.",
+                e
+            );
+        }
+        {namespace_with_flags.namespace}_is_cached = true;
+    }
+{{ endfor- }}
+{{ -endif }}{#- end of runtime_lookup_required #}
+{{ -for flag in flag_elements }}
+    @Override
+{{ -if not library_exported }}
+    @com.android.aconfig.annotations.AconfigFlagAccessor
+    @UnsupportedAppUsage
+{{ -endif }}
+    public boolean {flag.method_name}() \{
+{{ -if flag.is_read_write }}
+        if (!{flag.device_config_namespace}_is_cached) \{
+            load_overrides_{flag.device_config_namespace}();
+        }
+        return {flag.method_name};
+{{ -else }}
+        return {flag.default_value};
+{{ -endif }}
+    }
+{{ endfor }}
+}
+{{ else }}
+{#- Generate only stub if in test mode #}
+/** @hide */
+public final class FeatureFlagsImpl implements FeatureFlags \{
+{{ for flag in flag_elements }}
+    @Override
+{{ -if not library_exported }}
+    @com.android.aconfig.annotations.AconfigFlagAccessor
+{{ -endif }}
+    public boolean {flag.method_name}() \{
+        throw new UnsupportedOperationException(
+            "Method is not implemented.");
+    }
+{{ endfor- }}
+}
+{{ endif }}

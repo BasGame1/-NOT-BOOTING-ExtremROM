@@ -1,0 +1,1164 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!-- The UpgradeCode of the old WinFsp installer that did not support upgrades. -->
+<?define OldVersionUpgradeCode="82F812D9-4083-4EF1-8BC8-0F1EDA05B46B"?>
+
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+    xmlns:dep="http://schemas.microsoft.com/wix/DependencyExtension">
+    <Product
+        Id="*"
+        Name="$(var.MyProductName) $(var.MyProductVersion)"
+        Manufacturer="$(var.MyCompanyName)"
+        Version="$(var.MyVersion)"
+        Language="1033"
+        UpgradeCode="5466A3D8-3AA1-4240-B6A0-3A051940A3EC">
+
+        <Package
+            Description="$(var.MyProductName) - $(var.MyDescription)"
+            InstallerVersion="200"
+            Compressed="yes"
+            InstallScope="perMachine" />
+        <MajorUpgrade
+            Disallow="no"
+            AllowDowngrades="no"
+            AllowSameVersionUpgrades="yes"
+            DowngradeErrorMessage="A newer version of $(var.MyProductName) is already installed." />
+        <Media Id="1" Cabinet="$(var.MyProductName).cab" EmbedCab="yes" />
+        
+        <!-- Determine if we are on Win7 or above. -->
+        <Condition Message="$(var.MyProductName) requires Windows version 7 or higher in order to be installed.">
+            <![CDATA[Installed OR (VersionNT >= 601)]]>
+        </Condition>
+
+        <!-- Determine if the old WinFsp installer that did not support upgrades is installed. -->
+        <Property Id="OLDVERSIONINSTALLED">
+            <ProductSearch UpgradeCode="$(var.OldVersionUpgradeCode)" Minimum="0.0.0.0" />
+        </Property>
+        <Condition Message="An older version of $(var.MyProductName) that cannot be upgraded is already installed. You must uninstall it before you can install this version.">
+            NOT OLDVERSIONINSTALLED
+        </Condition>
+
+        <!-- Determine OS architecture. -->
+        <Property Id="OSARCH" Secure="yes" Value="AMD64">
+            <RegistrySearch
+                Id="R.OSARCH"
+                Root="HKLM"
+                Key="SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+                Name="PROCESSOR_ARCHITECTURE"
+                Type="raw" />
+        </Property>
+
+        <!-- Setup INSTALLDIR and SXSDIR from the registry or defaults. -->
+        <Property Id="P.RegistryKey">Software\$(var.MyProductName)</Property>
+        <Property Id="P.LauncherRegistryKey">Software\$(var.MyProductName)\Services</Property>
+        <Property Id="INSTALLDIR" Secure="yes">
+            <RegistrySearch
+                Id="R.INSTALLDIR"
+                Root="HKLM"
+                Key="[P.RegistryKey]"
+                Name="InstallDir"
+                Type="raw" />
+        </Property>
+        <Property Id="SXSDIR" Secure="yes">
+            <RegistrySearch
+                Id="R.SXSDIR"
+                Root="HKLM"
+                Key="[P.RegistryKey]"
+                Name="SxsDir"
+                Type="raw" />
+        </Property>
+        <SetProperty Id="INSTALLDIR" Value="[ProgramFilesFolder]$(var.MyProductName)\" After="CostInitialize">
+            NOT INSTALLDIR
+        </SetProperty>
+        <SetProperty Id="SXSDIR" Value="[INSTALLDIR]SxS\sxs.[InstanceID]\" After="SetINSTALLDIR">
+            ((NOT SXSDIR) OR WIX_UPGRADE_DETECTED) AND InstanceID
+        </SetProperty>
+
+        <!-- Setup directory structure. -->
+        <Directory Id="TARGETDIR" Name="SourceDir">
+            <Directory Id="ProgramFilesFolder">
+                <Directory Id="INSTALLDIR" Name="DYNAMIC">
+                    <Directory Id="SXSBASEDIR" Name="SxS">
+                        <Directory Id="SXSDIR" Name="DYNAMIC">
+                            <Directory Id="BINDIR" Name="bin" />
+                        </Directory>
+                    </Directory>
+                    <Directory Id="INCDIR" Name="inc" />
+                    <Directory Id="LIBDIR" Name="lib" />
+                    <Directory Id="OPTDIR" Name="opt" />
+                    <Directory Id="SMPDIR" Name="samples" />
+                </Directory>
+            </Directory>
+        </Directory>
+
+        <DirectoryRef Id="INSTALLDIR">
+            <Component Id="C.INSTALLDIR" Guid="C086521F-8552-43D1-AAE2-CDD579F66FDD">
+                <RegistryValue
+                    Root="HKLM"
+                    Key="[P.RegistryKey]"
+                    Name="InstallDir"
+                    Type="string"
+                    Value="[INSTALLDIR]" />
+                <dep:Provides Key="$(var.MyProductName)" />
+            </Component>
+            <Component Id="C.License.txt">
+                <File Name="License.txt" Source="..\..\..\License.txt" KeyPath="yes" />
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="SXSDIR">
+            <Component Id="C.SXSDIR" Guid="0F09CD39-1137-4DB8-A783-27B1F51353D1">
+                <RegistryValue
+                    Root="HKLM"
+                    Key="[P.RegistryKey]"
+                    Name="SxsDir"
+                    Type="string"
+                    Value="[SXSDIR]"
+                    KeyPath="yes" />
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="BINDIR" FileSource="..\build\$(var.Configuration)">
+            <Component Id="C.$(var.MyProductFileName)_a64.sys">
+                <File Name="$(var.MyProductFileName)-a64.sys" KeyPath="yes" />
+            </Component>
+            <Component Id="C.$(var.MyProductFileName)_x64.sys">
+                <File Name="$(var.MyProductFileName)-x64.sys" KeyPath="yes" />
+            </Component>
+            <Component Id="C.$(var.MyProductFileName)_x86.sys">
+                <File Name="$(var.MyProductFileName)-x86.sys" KeyPath="yes" />
+            </Component>
+
+            <!-- On WinArm64 register $(var.MyProductFileName)-a64.dll -->
+            <Component Id="C.$(var.MyProductFileName)_a64.dll.a64" Guid="2A7E68EB-D05F-4DD8-ABF2-EB8CB09697F0">
+                <File Id="FILE.$(var.MyProductFileName)_a64.dll.a64" Name="$(var.MyProductFileName)-a64.dll" KeyPath="yes" SelfRegCost="1" />
+                <Condition><![CDATA[OSARCH = "ARM64"]]></Condition>
+            </Component>
+            <Component Id="C.$(var.MyProductFileName)_x64.dll.a64" Guid="EA5ED4FB-FC72-4D27-9802-88D84DAE61B4">
+                <File Id="FILE.$(var.MyProductFileName)_x64.dll.a64" Name="$(var.MyProductFileName)-x64.dll" KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "ARM64"]]></Condition>
+            </Component>
+            <Component Id="C.$(var.MyProductFileName)_x86.dll.a64" Guid="2A9BD712-2F96-4794-8A58-929E39F3F3CC">
+                <File Id="FILE.$(var.MyProductFileName)_x86.dll.a64" Name="$(var.MyProductFileName)-x86.dll" KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "ARM64"]]></Condition>
+            </Component>
+
+            <!-- On Win64 register $(var.MyProductFileName)-x64.dll -->
+            <Component Id="C.$(var.MyProductFileName)_a64.dll.x64" Guid="026DA201-43E1-450C-9687-8A684FBF2D2D">
+                <File Id="FILE.$(var.MyProductFileName)_a64.dll.x64" Name="$(var.MyProductFileName)-a64.dll" KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "AMD64"]]></Condition>
+            </Component>
+            <Component Id="C.$(var.MyProductFileName)_x64.dll.x64" Guid="89201BAF-5812-4ECE-91CD-12EDFFF11CB1">
+                <File Id="FILE.$(var.MyProductFileName)_x64.dll.x64" Name="$(var.MyProductFileName)-x64.dll" KeyPath="yes" SelfRegCost="1" />
+                <Condition><![CDATA[OSARCH = "AMD64"]]></Condition>
+            </Component>
+            <Component Id="C.$(var.MyProductFileName)_x86.dll.x64" Guid="E6EE48A4-6BC7-4135-9A2F-FBBA30DE80BE">
+                <File Id="FILE.$(var.MyProductFileName)_x86.dll.x64" Name="$(var.MyProductFileName)-x86.dll" KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "AMD64"]]></Condition>
+            </Component>
+
+            <!-- On Win32 register $(var.MyProductFileName)-x86.dll -->
+            <Component Id="C.$(var.MyProductFileName)_a64.dll.x86" Guid="2B264958-DECC-4B32-9BB2-DE32D6B6BE77">
+                <File Id="FILE.$(var.MyProductFileName)_a64.dll.x86" Name="$(var.MyProductFileName)-a64.dll" KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "x86"]]></Condition>
+            </Component>
+            <Component Id="C.$(var.MyProductFileName)_x64.dll.x86" Guid="29FB908F-1D36-4789-9778-4CE2E9C19CEA">
+                <File Id="FILE.$(var.MyProductFileName)_x64.dll.x86" Name="$(var.MyProductFileName)-x64.dll" KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "x86"]]></Condition>
+            </Component>
+            <Component Id="C.$(var.MyProductFileName)_x86.dll.x86" Guid="80E87D91-69A8-4942-ABC1-36652B1CA700">
+                <File Id="FILE.$(var.MyProductFileName)_x86.dll.x86" Name="$(var.MyProductFileName)-x86.dll" KeyPath="yes" SelfRegCost="1" />
+                <Condition><![CDATA[OSARCH = "x86"]]></Condition>
+            </Component>
+
+            <!-- install assembly -->
+            <Component Id="C.$(var.MyProductFileName)_msil.dll" Guid="1772CDE5-4B2F-48CF-B2DA-CA43818053A8">
+                <File Id="FILE.$(var.MyProductFileName)_msil.dll" Name="$(var.MyProductFileName)-msil.dll" KeyPath="yes" />
+            </Component>
+            <Component Id="C.$(var.MyProductFileName)_msil.xml" Guid="C76745D2-51FA-4028-B827-3F2F3F763751">
+                <File Id="FILE.$(var.MyProductFileName)_msil.xml" Name="$(var.MyProductFileName)-msil.xml" KeyPath="yes" />
+            </Component>
+            <!--
+            <Component Id="C.$(var.MyProductFileName)_msil.dll.GAC" Guid="D86F8764-2FCC-43DA-A174-23E0FD6D45B7">
+                <File Id="FILE.$(var.MyProductFileName)_msil.dll.GAC" Name="$(var.MyProductFileName)-msil.dll" KeyPath="yes" Assembly=".net" />
+            </Component>
+            <Component Id="C.policy.$(var.MyProductFileName)_msil.dll.GAC">
+                <File Name="policy.1.0.$(var.MyProductFileName)-msil.dll" KeyPath="yes" Assembly=".net" />
+                <File Name="policy.1.0.$(var.MyProductFileName)-msil.config" KeyPath="no" />
+            </Component>
+            -->
+
+            <!-- On WinArm64 ServiceInstall launcher-a64.exe -->
+            <Component Id="C.launcher_a64.exe.a64" Guid="D8B657EA-7B08-48D1-B5F7-76CFB68E1BD5">
+                <File Id="FILE.launcher_a64.exe.a64" Name="launcher-a64.exe" KeyPath="yes" />
+                <ServiceInstall
+                    Id="launcher_a64.exe.a64"
+                    Name="$(var.MyProductName).Launcher"
+                    Description="$(var.MyDescription)"
+                    Type="ownProcess"
+                    Start="auto"
+                    ErrorControl="ignore" />
+                <ServiceControl
+                    Id="launcher_a64.exe.a64"
+                    Name="$(var.MyProductName).Launcher"
+                    Start="install"
+                    Stop="both"
+                    Remove="uninstall" />
+                <Condition><![CDATA[OSARCH = "ARM64"]]></Condition>
+            </Component>
+            <Component Id="C.launcher_x64.exe.a64" Guid="3EFC0561-6EA2-4E7E-B707-C2EA706CFBA0">
+                <File Id="FILE.launcher_x64.exe.a64" Name="launcher-x64.exe" KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "ARM64"]]></Condition>
+            </Component>
+            <Component Id="C.launcher_x86.exe.a64" Guid="69F16682-10AE-4FC4-9007-8D80CE0D8388">
+                <File Id="FILE.launcher_x86.exe.a64" Name="launcher-x86.exe" KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "ARM64"]]></Condition>
+            </Component>
+
+            <!-- On Win64 ServiceInstall launcher-x64.exe -->
+            <Component Id="C.launcher_a64.exe.x64" Guid="29760ACE-69CD-4061-8C0C-8A6E72D23A45">
+                <File Id="FILE.launcher_a64.exe.x64" Name="launcher-a64.exe" KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "AMD64"]]></Condition>
+            </Component>
+            <Component Id="C.launcher_x64.exe.x64" Guid="36ACBA60-1C92-4D2A-B497-CD4FB13A042F">
+                <File Id="FILE.launcher_x64.exe.x64" Name="launcher-x64.exe" KeyPath="yes" />
+                <ServiceInstall
+                    Id="launcher_x64.exe.x64"
+                    Name="$(var.MyProductName).Launcher"
+                    Description="$(var.MyDescription)"
+                    Type="ownProcess"
+                    Start="auto"
+                    ErrorControl="ignore" />
+                <ServiceControl
+                    Id="launcher_x64.exe.x64"
+                    Name="$(var.MyProductName).Launcher"
+                    Start="install"
+                    Stop="both"
+                    Remove="uninstall" />
+                <Condition><![CDATA[OSARCH = "AMD64"]]></Condition>
+            </Component>
+            <Component Id="C.launcher_x86.exe.x64" Guid="98F17F67-AC1D-4E16-A147-B7AE113E3CB3">
+                <File Id="FILE.launcher_x86.exe.x64" Name="launcher-x86.exe" KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "AMD64"]]></Condition>
+            </Component>
+
+            <!-- On Win32 ServiceInstall launcher-x86.exe -->
+            <Component Id="C.launcher_a64.exe.x86" Guid="9024A9FE-7445-4241-ADA3-82A57C92719A">
+                <File Id="FILE.launcher_a64.exe.x86" Name="launcher-a64.exe" KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "x86"]]></Condition>
+            </Component>
+            <Component Id="C.launcher_x64.exe.x86" Guid="A85DA9CD-26AA-460E-950D-CA9692B87465">
+                <File Id="FILE.launcher_x64.exe.x86" Name="launcher-x64.exe" KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "x86"]]></Condition>
+            </Component>
+            <Component Id="C.launcher_x86.exe.x86" Guid="01FCCF6B-9F4B-4F29-8149-489470FFD449">
+                <File Id="FILE.launcher_x86.exe.x86" Name="launcher-x86.exe" KeyPath="yes" />
+                <ServiceInstall
+                    Id="launcher_x86.exe.x86"
+                    Name="$(var.MyProductName).Launcher"
+                    Description="$(var.MyDescription)"
+                    Type="ownProcess"
+                    Start="auto"
+                    ErrorControl="ignore" />
+                <ServiceControl
+                    Id="launcher_x86.exe.x86"
+                    Name="$(var.MyProductName).Launcher"
+                    Start="install"
+                    Stop="both"
+                    Remove="uninstall" />
+                <Condition><![CDATA[OSARCH = "x86"]]></Condition>
+            </Component>
+
+            <Component Id="C.launchctl_a64.exe" Guid="A7D830DD-20D2-48BF-85B6-E306BCCAFD2D">
+                <File Name="launchctl-a64.exe" KeyPath="yes" />
+            </Component>
+            <Component Id="C.launchctl_x64.exe" Guid="CCC8974A-4CD0-443E-840D-1C92535BBD04">
+                <File Name="launchctl-x64.exe" KeyPath="yes" />
+            </Component>
+            <Component Id="C.launchctl_x86.exe" Guid="6E382342-10D4-4274-8FA9-F1B44C40C277">
+                <File Name="launchctl-x86.exe" KeyPath="yes" />
+            </Component>
+
+            <Component Id="C.fsptool_a64.exe" Guid="8ACEB970-CAD5-491D-8CE8-12675CC0E812">
+                <File Name="fsptool-a64.exe" KeyPath="yes" />
+            </Component>
+            <Component Id="C.fsptool_x64.exe" Guid="35EE49E2-9565-4FA2-A0AC-D51FD94FA380">
+                <File Name="fsptool-x64.exe" KeyPath="yes" />
+            </Component>
+            <Component Id="C.fsptool_x86.exe" Guid="0E6D5742-D500-4E24-A0FA-E6316DB70D8B">
+                <File Name="fsptool-x86.exe" KeyPath="yes" />
+            </Component>
+
+            <Component Id="C.diag.bat">
+                <File Name="diag.bat" Source="..\..\..\tools\diag.bat" KeyPath="yes" />
+            </Component>
+            <Component Id="C.fsreg.bat">
+                <File Name="fsreg.bat" Source="..\..\..\tools\fsreg.bat" KeyPath="yes" />
+            </Component>
+
+            <Component Id="C.memfs_a64.exe">
+                <File Name="memfs-a64.exe" KeyPath="yes" />
+                <RegistryKey
+                    Root="HKLM"
+                    Key="[P.LauncherRegistryKey]">
+                    <RegistryKey
+                        Key="memfs-a64">
+                        <RegistryValue
+                            Type="string"
+                            Name="Executable"
+                            Value="[BINDIR]memfs-a64.exe" />
+                        <RegistryValue
+                            Type="string"
+                            Name="CommandLine"
+                            Value="-i -F NTFS -n 65536 -s 67108864 -u %1 -m %2" />
+                        <RegistryValue
+                            Type="string"
+                            Name="Security"
+                            Value="D:P(A;;RPWPLC;;;WD)" />
+                        <RegistryValue
+                            Type="integer"
+                            Name="JobControl"
+                            Value="1" />
+                    </RegistryKey>
+                </RegistryKey>
+            </Component>
+            <Component Id="C.memfs_x64.exe">
+                <File Name="memfs-x64.exe" KeyPath="yes" />
+                <RegistryKey
+                    Root="HKLM"
+                    Key="[P.LauncherRegistryKey]">
+                    <RegistryKey
+                        Key="memfs64">
+                        <RegistryValue
+                            Type="string"
+                            Name="Executable"
+                            Value="[BINDIR]memfs-x64.exe" />
+                        <RegistryValue
+                            Type="string"
+                            Name="CommandLine"
+                            Value="-i -F NTFS -n 65536 -s 67108864 -u %1 -m %2" />
+                        <RegistryValue
+                            Type="string"
+                            Name="Security"
+                            Value="D:P(A;;RPWPLC;;;WD)" />
+                        <RegistryValue
+                            Type="integer"
+                            Name="JobControl"
+                            Value="1" />
+                    </RegistryKey>
+                </RegistryKey>
+            </Component>
+            <Component Id="C.memfs_x86.exe">
+                <File Name="memfs-x86.exe" KeyPath="yes" />
+                <RegistryKey
+                    Root="HKLM"
+                    Key="[P.LauncherRegistryKey]">
+                    <RegistryKey
+                        Key="memfs32">
+                        <RegistryValue
+                            Type="string"
+                            Name="Executable"
+                            Value="[BINDIR]memfs-x86.exe" />
+                        <RegistryValue
+                            Type="string"
+                            Name="CommandLine"
+                            Value="-i -F NTFS -n 65536 -s 67108864 -u %1 -m %2" />
+                        <RegistryValue
+                            Type="string"
+                            Name="Security"
+                            Value="D:P(A;;RPWPLC;;;WD)" />
+                        <RegistryValue
+                            Type="integer"
+                            Name="JobControl"
+                            Value="1" />
+                    </RegistryKey>
+                </RegistryKey>
+            </Component>
+            <Component Id="C.memfs_dotnet_msil.exe">
+                <File Name="memfs-dotnet-msil.exe" KeyPath="yes" />
+                <RegistryKey
+                    Root="HKLM"
+                    Key="[P.LauncherRegistryKey]">
+                    <RegistryKey
+                        Key="memfs-dotnet">
+                        <RegistryValue
+                            Type="string"
+                            Name="Executable"
+                            Value="[BINDIR]memfs-dotnet-msil.exe" />
+                        <RegistryValue
+                            Type="string"
+                            Name="CommandLine"
+                            Value="-i -F NTFS -n 65536 -s 67108864 -u %1 -m %2" />
+                        <RegistryValue
+                            Type="string"
+                            Name="Security"
+                            Value="D:P(A;;RPWPLC;;;WD)" />
+                        <RegistryValue
+                            Type="integer"
+                            Name="JobControl"
+                            Value="1" />
+                    </RegistryKey>
+                </RegistryKey>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="INCDIR" FileSource="..\..\..\inc">
+            <Directory Id="INCDIR.winfsp" Name="winfsp">
+                <Component Id="C.fsctl.h">
+                    <File Name="fsctl.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.winfsp.h">
+                    <File Name="winfsp.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.launch.h">
+                    <File Name="launch.h" KeyPath="yes" />
+                </Component>
+                <!--Component Id="C.winfsp.hpp">
+                    <File Name="winfsp.hpp" KeyPath="yes" />
+                </Component-->
+            </Directory>
+            <Directory Id="INCDIR.fuse" Name="fuse">
+                <Component Id="C.fuse.h">
+                    <File Name="fuse.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.fuse_common.h">
+                    <File Name="fuse_common.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.fuse_opt.h">
+                    <File Name="fuse_opt.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.winfsp_fuse.h">
+                    <File Name="winfsp_fuse.h" KeyPath="yes" />
+                </Component>
+            </Directory>
+            <Directory Id="INCDIR.fuse3" Name="fuse3">
+                <Component Id="C.fuse3.h">
+                    <File Id="fuse3.h" Name="fuse.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.fuse3_common.h">
+                    <File Id="fuse3_common.h" Name="fuse_common.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.fuse3_opt.h">
+                    <File Id="fuse3_opt.h" Name="fuse_opt.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.winfsp_fuse3.h">
+                    <File Id="winfsp_fuse3.h" Name="winfsp_fuse.h" KeyPath="yes" />
+                </Component>
+            </Directory>
+        </DirectoryRef>
+        <DirectoryRef Id="LIBDIR" FileSource="..\build\$(var.Configuration)">
+            <Component Id="C.$(var.MyProductFileName)_a64.lib">
+                <File Name="$(var.MyProductFileName)-a64.lib" KeyPath="yes" />
+            </Component>
+            <Component Id="C.$(var.MyProductFileName)_x64.lib">
+                <File Name="$(var.MyProductFileName)-x64.lib" KeyPath="yes" />
+            </Component>
+            <Component Id="C.$(var.MyProductFileName)_x86.lib">
+                <File Name="$(var.MyProductFileName)-x86.lib" KeyPath="yes" />
+            </Component>
+
+            <!-- On WinArm64 copy fuse-a64.pc -->
+            <Component Id="C.fuse_a64.pc" Guid="776C28B5-DA1A-4EB6-96E6-3D22FE1573AC">
+                <File
+                    Id="FILE.fuse_a64.pc"
+                    Name="fuse.pc"
+                    Source="..\build\$(var.Configuration)\fuse-a64.pc"
+                    KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "ARM64"]]></Condition>
+            </Component>
+
+            <!-- On Win64 copy fuse-x64.pc -->
+            <Component Id="C.fuse_x64.pc" Guid="89D39F6E-2994-4E6F-ACB6-5B544057C051">
+                <File
+                    Id="FILE.fuse_x64.pc"
+                    Name="fuse.pc"
+                    Source="..\build\$(var.Configuration)\fuse-x64.pc"
+                    KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "AMD64"]]></Condition>
+            </Component>
+
+            <!-- On Win32 copy fuse-x86.pc -->
+            <Component Id="C.fuse_x86.pc" Guid="75637ECD-B3EC-4A19-98B7-9AFAB0722D9A">
+                <File
+                    Id="FILE.fuse_x86.pc"
+                    Name="fuse.pc"
+                    Source="..\build\$(var.Configuration)\fuse-x86.pc"
+                    KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "x86"]]></Condition>
+            </Component>
+
+            <!-- On WinArm64 copy fuse3-x64.pc -->
+            <Component Id="C.fuse3_a64.pc" Guid="5A69B633-11E4-46E4-8D08-BED1BE7BF4F0">
+                <File
+                    Id="FILE.fuse3_a64.pc"
+                    Name="fuse3.pc"
+                    Source="..\build\$(var.Configuration)\fuse3-a64.pc"
+                    KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "ARM64"]]></Condition>
+            </Component>
+
+            <!-- On Win64 copy fuse3-x64.pc -->
+            <Component Id="C.fuse3_x64.pc" Guid="EEAF35B5-5D6C-47D6-BEE3-5E44DD5A294B">
+                <File
+                    Id="FILE.fuse3_x64.pc"
+                    Name="fuse3.pc"
+                    Source="..\build\$(var.Configuration)\fuse3-x64.pc"
+                    KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "AMD64"]]></Condition>
+            </Component>
+
+            <!-- On Win32 copy fuse3-x86.pc -->
+            <Component Id="C.fuse3_x86.pc" Guid="476CF5E5-2B8E-4D75-B1A5-FFA8C3DAECB2">
+                <File
+                    Id="FILE.fuse3_x86.pc"
+                    Name="fuse3.pc"
+                    Source="..\build\$(var.Configuration)\fuse3-x86.pc"
+                    KeyPath="yes" />
+                <Condition><![CDATA[OSARCH = "x86"]]></Condition>
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="OPTDIR">
+            <Directory Id="OPTDIR.cygfuse" Name="cygfuse" FileSource="..\..\..\opt\cygfuse\dist">
+                <Directory Id="OPTDIR.cygfuse.x64" Name="x64">
+                    <Component Id="C.fuse.tar.xz.x64">
+                        <File Id="FILE.fuse.tar.xz.x64" Name="fuse-2.8-10.tar.xz" KeyPath="yes" />
+                    </Component>
+                    <Component Id="C.fuse3.tar.xz.x64">
+                        <File Id="FILE.fuse3.tar.xz.x64" Name="fuse3-3.2-2.tar.xz" KeyPath="yes" />
+                    </Component>
+                </Directory>
+                <Directory Id="OPTDIR.cygfuse.x86" Name="x86">
+                    <Component Id="C.fuse.tar.xz.x86">
+                        <File Id="FILE.fuse.tar.xz.x86" Name="fuse-2.8-10.tar.xz" KeyPath="yes" />
+                    </Component>
+                    <Component Id="C.fuse3.tar.xz.x86">
+                        <File Id="FILE.fuse3.tar.xz.x86" Name="fuse3-3.2-2.tar.xz" KeyPath="yes" />
+                    </Component>
+                </Directory>
+                <Component Id="C.fuse.install.sh">
+                    <File Name="install.sh" KeyPath="yes" />
+                </Component>
+                <Component Id="C.fuse.uninstall.sh">
+                    <File Name="uninstall.sh" KeyPath="yes" />
+                </Component>
+            </Directory>
+            <Directory Id="OPTDIR.fsext" Name="fsext" FileSource="..\..\..\opt\fsext">
+                <Directory Id="OPTDIR.fsext.inc" Name="inc">
+                    <Directory Id="OPTDIR.fsext.inc.winfsp" Name="winfsp">
+                        <Component Id="C.fsext.h">
+                            <File Name="fsext.h" KeyPath="yes" />
+                        </Component>
+                    </Directory>
+                </Directory>
+                <Directory Id="OPTDIR.fsext.lib" Name="lib">
+                    <Component Id="C.fsext.winfsp_a64.lib">
+                        <File Id="FILE.fsext.winfsp_a64.lib" Name="winfsp-a64.lib" KeyPath="yes" />
+                    </Component>
+                    <Component Id="C.fsext.winfsp_x64.lib">
+                        <File Id="FILE.fsext.winfsp_x64.lib" Name="winfsp-x64.lib" KeyPath="yes" />
+                    </Component>
+                    <Component Id="C.fsext.winfsp_x86.lib">
+                        <File Id="FILE.fsext.winfsp_x86.lib" Name="winfsp-x86.lib" KeyPath="yes" />
+                    </Component>
+                </Directory>
+            </Directory>
+        </DirectoryRef>
+        <DirectoryRef Id="SMPDIR" FileSource="..\..\..\tst">
+            <Directory Id="SMPDIR.memfs" Name="memfs">
+                <Component Id="C.memfs.h">
+                    <File Name="memfs.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs.cpp">
+                    <File Name="memfs.cpp" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs_main.c">
+                    <File Name="memfs-main.c" KeyPath="yes" />
+                </Component>
+            </Directory>
+            <Directory Id="SMPDIR.memfs_fuse" Name="memfs-fuse">
+                <Component Id="C.memfs_fuse.cpp">
+                    <File Name="memfs-fuse.cpp" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs_fuse.compat.h">
+                    <File Id="F.memfs_fuse.compat.h" Name="compat.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs_fuse.sln">
+                    <File Name="memfs-fuse.sln" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs_fuse.vcxproj">
+                    <File Name="memfs-fuse.vcxproj" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs_fuse.vcxproj.filters">
+                    <File Name="memfs-fuse.vcxproj.filters" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs_fuse.Makefile">
+                    <File Id="F.memfs_fuse.Makefile" Name="Makefile" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs_fuse.README.md">
+                    <File Id="F.memfsx_fuse.README.md" Name="README.md" KeyPath="yes" />
+                </Component>
+            </Directory>
+            <Directory Id="SMPDIR.memfs_fuse3" Name="memfs-fuse3">
+                <Component Id="C.memfs_fuse3.cpp">
+                    <File Name="memfs-fuse3.cpp" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs_fuse3.compat.h">
+                    <File Id="F.memfs_fuse3.compat.h" Name="compat.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs_fuse3.sln">
+                    <File Name="memfs-fuse3.sln" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs_fuse3.vcxproj">
+                    <File Name="memfs-fuse3.vcxproj" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs_fuse3.vcxproj.filters">
+                    <File Name="memfs-fuse3.vcxproj.filters" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs_fuse3.Makefile">
+                    <File Id="F.memfs_fuse3.Makefile" Name="Makefile" KeyPath="yes" />
+                </Component>
+                <Component Id="C.memfs_fuse3.README.md">
+                    <File Id="F.memfsx_fuse3.README.md" Name="README.md" KeyPath="yes" />
+                </Component>
+            </Directory>
+            <Directory Id="SMPDIR.memfs_dotnet" Name="memfs-dotnet">
+                <Component Id="C.memfs_dotnet.Program.cs">
+                    <File Id="FILE.memfs_dotnet.Program.cs" Name="Program.cs" KeyPath="yes" />
+                </Component>
+            </Directory>
+            <Directory Id="SMPDIR.ntptfs" Name="ntptfs">
+                <Component Id="C.ptfs.c">
+                    <File Name="ptfs.c" KeyPath="yes" />
+                </Component>
+                <Component Id="C.lfs.c">
+                    <File Name="lfs.c" KeyPath="yes" />
+                </Component>
+                <Component Id="C.ptfs_main.c">
+                    <File Name="ptfs-main.c" KeyPath="yes" />
+                </Component>
+                <Component Id="C.ptfs.h">
+                    <File Name="ptfs.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.ntptfs.sln">
+                    <File Name="ntptfs.sln" KeyPath="yes" />
+                </Component>
+                <Component Id="C.ntptfs.vcxproj">
+                    <File Name="ntptfs.vcxproj" KeyPath="yes" />
+                </Component>
+                <Component Id="C.ntptfs.vcxproj.filters">
+                    <File Name="ntptfs.vcxproj.filters" KeyPath="yes" />
+                </Component>
+            </Directory>
+            <Directory Id="SMPDIR.airfs" Name="airfs">
+                <Component Id="C.airfs.cpp">
+                    <File Name="airfs.cpp" KeyPath="yes" />
+                </Component>
+                <Component Id="C.persistence.cpp">
+                    <File Name="persistence.cpp" KeyPath="yes" />
+                </Component>
+                <Component Id="C.common.h">
+                    <File Name="common.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.airfs.sln">
+                    <File Name="airfs.sln" KeyPath="yes" />
+                </Component>
+                <Component Id="C.airfs.vcxproj">
+                    <File Name="airfs.vcxproj" KeyPath="yes" />
+                </Component>
+                <Component Id="C.airfs.vcxproj.filters">
+                    <File Name="airfs.vcxproj.filters" KeyPath="yes" />
+                </Component>
+            </Directory>
+            <Directory Id="SMPDIR.passthrough" Name="passthrough">
+                <Component Id="C.passthrough.c">
+                    <File Name="passthrough.c" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough.sln">
+                    <File Name="passthrough.sln" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough.vcxproj">
+                    <File Name="passthrough.vcxproj" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough.vcxproj.filters">
+                    <File Name="passthrough.vcxproj.filters" KeyPath="yes" />
+                </Component>
+            </Directory>
+            <!--Directory Id="SMPDIR.passthrough_cpp" Name="passthrough-cpp">
+                <Component Id="C.passthrough_cpp.cpp">
+                    <File Name="passthrough-cpp.cpp" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_cpp.sln">
+                    <File Name="passthrough-cpp.sln" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_cpp.vcxproj">
+                    <File Name="passthrough-cpp.vcxproj" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_cpp.vcxproj.filters">
+                    <File Name="passthrough-cpp.vcxproj.filters" KeyPath="yes" />
+                </Component>
+            </Directory-->
+            <Directory Id="SMPDIR.passthrough_fuse" Name="passthrough-fuse">
+                <Component Id="C.passthrough_fuse.c">
+                    <File Name="passthrough-fuse.c" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse.winposix.c">
+                    <File Name="winposix.c" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse.winposix.h">
+                    <File Name="winposix.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse.sln">
+                    <File Name="passthrough-fuse.sln" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse.vcxproj">
+                    <File Name="passthrough-fuse.vcxproj" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse.vcxproj.filters">
+                    <File Name="passthrough-fuse.vcxproj.filters" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse.Makefile">
+                    <File Name="Makefile" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse.README.md">
+                    <File Name="README.md" KeyPath="yes" />
+                </Component>
+            </Directory>
+            <Directory Id="SMPDIR.passthrough_fuse3" Name="passthrough-fuse3">
+                <Component Id="C.passthrough_fuse3.c">
+                    <File Name="passthrough-fuse3.c" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse3.winposix.c">
+                    <File Id="F.passthrough_fuse3.winposix.c" Name="winposix.c" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse3.winposix.h">
+                    <File Id="F.passthrough_fuse3.winposix.h" Name="winposix.h" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse3.sln">
+                    <File Name="passthrough-fuse3.sln" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse3.vcxproj">
+                    <File Name="passthrough-fuse3.vcxproj" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse3.vcxproj.filters">
+                    <File Name="passthrough-fuse3.vcxproj.filters" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse3.Makefile">
+                    <File Id="F.passthrough_fuse3.Makefile" Name="Makefile" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_fuse3.README.md">
+                    <File Id="F.passthrough_fuse3.README.md" Name="README.md" KeyPath="yes" />
+                </Component>
+            </Directory>
+            <Directory Id="SMPDIR.passthrough_dotnet" Name="passthrough-dotnet">
+                <Component Id="C.passthrough_dotnet.Program.cs">
+                    <File Id="FILE.passthrough_dotnet.Program.cs" Name="Program.cs" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_dotnet.sln">
+                    <File Name="passthrough-dotnet.sln" KeyPath="yes" />
+                </Component>
+                <Component Id="C.passthrough_dotnet.csproj">
+                    <File Name="passthrough-dotnet.csproj" KeyPath="yes" />
+                </Component>
+            </Directory>
+            <Directory Id="SMPDIR.notifyfs" Name="notifyfs">
+                <Component Id="C.notifyfs.c">
+                    <File Name="notifyfs.c" KeyPath="yes" />
+                </Component>
+                <Component Id="C.notifyfs.sln">
+                    <File Name="notifyfs.sln" KeyPath="yes" />
+                </Component>
+                <Component Id="C.notifyfs.vcxproj">
+                    <File Name="notifyfs.vcxproj" KeyPath="yes" />
+                </Component>
+                <Component Id="C.notifyfs.vcxproj.filters">
+                    <File Name="notifyfs.vcxproj.filters" KeyPath="yes" />
+                </Component>
+            </Directory>
+            <Directory Id="SMPDIR.notifyfs_dotnet" Name="notifyfs-dotnet">
+                <Component Id="C.notifyfs_dotnet.Program.cs">
+                    <File Id="FILE.notifyfs_dotnet.Program.cs" Name="Program.cs" KeyPath="yes" />
+                </Component>
+                <Component Id="C.notifyfs_dotnet.sln">
+                    <File Name="notifyfs-dotnet.sln" KeyPath="yes" />
+                </Component>
+                <Component Id="C.notifyfs_dotnet.csproj">
+                    <File Name="notifyfs-dotnet.csproj" KeyPath="yes" />
+                </Component>
+            </Directory>
+        </DirectoryRef>
+
+        <ComponentGroup Id="C.$(var.MyProductName).bin">
+            <ComponentRef Id="C.$(var.MyProductFileName)_a64.sys" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_x64.sys" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_x86.sys" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_a64.dll.a64" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_x64.dll.a64" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_x86.dll.a64" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_a64.dll.x64" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_x64.dll.x64" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_x86.dll.x64" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_a64.dll.x86" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_x64.dll.x86" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_x86.dll.x86" />
+            <ComponentRef Id="C.launcher_a64.exe.a64" />
+            <ComponentRef Id="C.launcher_x64.exe.a64" />
+            <ComponentRef Id="C.launcher_x86.exe.a64" />
+            <ComponentRef Id="C.launcher_a64.exe.x64" />
+            <ComponentRef Id="C.launcher_x64.exe.x64" />
+            <ComponentRef Id="C.launcher_x86.exe.x64" />
+            <ComponentRef Id="C.launcher_a64.exe.x86" />
+            <ComponentRef Id="C.launcher_x64.exe.x86" />
+            <ComponentRef Id="C.launcher_x86.exe.x86" />
+            <ComponentRef Id="C.launchctl_a64.exe" />
+            <ComponentRef Id="C.launchctl_x64.exe" />
+            <ComponentRef Id="C.launchctl_x86.exe" />
+            <ComponentRef Id="C.fsptool_a64.exe" />
+            <ComponentRef Id="C.fsptool_x64.exe" />
+            <ComponentRef Id="C.fsptool_x86.exe" />
+            <ComponentRef Id="C.diag.bat" />
+            <ComponentRef Id="C.fsreg.bat" />
+        </ComponentGroup>
+        <ComponentGroup Id="C.$(var.MyProductName).inc">
+            <ComponentRef Id="C.fsctl.h" />
+            <ComponentRef Id="C.winfsp.h" />
+            <ComponentRef Id="C.launch.h" />
+            <!--ComponentRef Id="C.winfsp.hpp" /-->
+            <ComponentRef Id="C.fuse.h" />
+            <ComponentRef Id="C.fuse_common.h" />
+            <ComponentRef Id="C.fuse_opt.h" />
+            <ComponentRef Id="C.winfsp_fuse.h" />
+            <ComponentRef Id="C.fuse3.h" />
+            <ComponentRef Id="C.fuse3_common.h" />
+            <ComponentRef Id="C.fuse3_opt.h" />
+            <ComponentRef Id="C.winfsp_fuse3.h" />
+        </ComponentGroup>
+        <ComponentGroup Id="C.$(var.MyProductName).lib">
+            <ComponentRef Id="C.$(var.MyProductFileName)_a64.lib" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_x64.lib" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_x86.lib" />
+            <ComponentRef Id="C.fuse_a64.pc" />
+            <ComponentRef Id="C.fuse_x64.pc" />
+            <ComponentRef Id="C.fuse_x86.pc" />
+            <ComponentRef Id="C.fuse3_a64.pc" />
+            <ComponentRef Id="C.fuse3_x64.pc" />
+            <ComponentRef Id="C.fuse3_x86.pc" />
+        </ComponentGroup>
+        <ComponentGroup Id="C.$(var.MyProductName).opt.fuse">
+            <ComponentRef Id="C.fuse.tar.xz.x64" />
+            <ComponentRef Id="C.fuse.tar.xz.x86" />
+            <ComponentRef Id="C.fuse3.tar.xz.x64" />
+            <ComponentRef Id="C.fuse3.tar.xz.x86" />
+            <ComponentRef Id="C.fuse.install.sh" />
+            <ComponentRef Id="C.fuse.uninstall.sh" />
+        </ComponentGroup>
+        <ComponentGroup Id="C.$(var.MyProductName).opt.fsext">
+            <ComponentRef Id="C.fsext.h" />
+            <ComponentRef Id="C.fsext.winfsp_a64.lib" />
+            <ComponentRef Id="C.fsext.winfsp_x64.lib" />
+            <ComponentRef Id="C.fsext.winfsp_x86.lib" />
+        </ComponentGroup>
+        <ComponentGroup Id="C.$(var.MyProductName).smp">
+            <ComponentRef Id="C.memfs_a64.exe" />
+            <ComponentRef Id="C.memfs_x64.exe" />
+            <ComponentRef Id="C.memfs_x86.exe" />
+            <ComponentRef Id="C.memfs.h" />
+            <ComponentRef Id="C.memfs.cpp" />
+            <ComponentRef Id="C.memfs_main.c" />
+            <ComponentRef Id="C.memfs_fuse.cpp" />
+            <ComponentRef Id="C.memfs_fuse.compat.h" />
+            <ComponentRef Id="C.memfs_fuse.sln" />
+            <ComponentRef Id="C.memfs_fuse.vcxproj" />
+            <ComponentRef Id="C.memfs_fuse.vcxproj.filters" />
+            <ComponentRef Id="C.memfs_fuse.Makefile" />
+            <ComponentRef Id="C.memfs_fuse.README.md" />
+            <ComponentRef Id="C.memfs_fuse3.cpp" />
+            <ComponentRef Id="C.memfs_fuse3.compat.h" />
+            <ComponentRef Id="C.memfs_fuse3.sln" />
+            <ComponentRef Id="C.memfs_fuse3.vcxproj" />
+            <ComponentRef Id="C.memfs_fuse3.vcxproj.filters" />
+            <ComponentRef Id="C.memfs_fuse3.Makefile" />
+            <ComponentRef Id="C.memfs_fuse3.README.md" />
+            <ComponentRef Id="C.ptfs.c" />
+            <ComponentRef Id="C.lfs.c" />
+            <ComponentRef Id="C.ptfs_main.c" />
+            <ComponentRef Id="C.ptfs.h" />
+            <ComponentRef Id="C.ntptfs.sln" />
+            <ComponentRef Id="C.ntptfs.vcxproj" />
+            <ComponentRef Id="C.ntptfs.vcxproj.filters" />
+            <ComponentRef Id="C.airfs.cpp" />
+            <ComponentRef Id="C.persistence.cpp" />
+            <ComponentRef Id="C.common.h" />
+            <ComponentRef Id="C.airfs.sln" />
+            <ComponentRef Id="C.airfs.vcxproj" />
+            <ComponentRef Id="C.airfs.vcxproj.filters" />
+            <ComponentRef Id="C.passthrough.c" />
+            <ComponentRef Id="C.passthrough.sln" />
+            <ComponentRef Id="C.passthrough.vcxproj" />
+            <ComponentRef Id="C.passthrough.vcxproj.filters" />
+            <!--ComponentRef Id="C.passthrough_cpp.cpp" /-->
+            <!--ComponentRef Id="C.passthrough_cpp.sln" /-->
+            <!--ComponentRef Id="C.passthrough_cpp.vcxproj" /-->
+            <!--ComponentRef Id="C.passthrough_cpp.vcxproj.filters" /-->
+            <ComponentRef Id="C.passthrough_fuse.c" />
+            <ComponentRef Id="C.passthrough_fuse.winposix.c" />
+            <ComponentRef Id="C.passthrough_fuse.winposix.h" />
+            <ComponentRef Id="C.passthrough_fuse.sln" />
+            <ComponentRef Id="C.passthrough_fuse.vcxproj" />
+            <ComponentRef Id="C.passthrough_fuse.vcxproj.filters" />
+            <ComponentRef Id="C.passthrough_fuse.Makefile" />
+            <ComponentRef Id="C.passthrough_fuse.README.md" />
+            <ComponentRef Id="C.passthrough_fuse3.c" />
+            <ComponentRef Id="C.passthrough_fuse3.winposix.c" />
+            <ComponentRef Id="C.passthrough_fuse3.winposix.h" />
+            <ComponentRef Id="C.passthrough_fuse3.sln" />
+            <ComponentRef Id="C.passthrough_fuse3.vcxproj" />
+            <ComponentRef Id="C.passthrough_fuse3.vcxproj.filters" />
+            <ComponentRef Id="C.passthrough_fuse3.Makefile" />
+            <ComponentRef Id="C.passthrough_fuse3.README.md" />
+            <ComponentRef Id="C.notifyfs.c" />
+            <ComponentRef Id="C.notifyfs.sln" />
+            <ComponentRef Id="C.notifyfs.vcxproj" />
+            <ComponentRef Id="C.notifyfs.vcxproj.filters" />
+        </ComponentGroup>
+        <ComponentGroup Id="C.$(var.MyProductName).net">
+            <ComponentRef Id="C.$(var.MyProductFileName)_msil.dll" />
+            <ComponentRef Id="C.$(var.MyProductFileName)_msil.xml" />
+            <!--
+            <ComponentRef Id="C.$(var.MyProductFileName)_msil.dll.GAC" />
+            <ComponentRef Id="C.policy.$(var.MyProductFileName)_msil.dll.GAC" />
+            -->
+        </ComponentGroup>
+        <ComponentGroup Id="C.$(var.MyProductName).smp.net">
+            <ComponentRef Id="C.memfs_dotnet_msil.exe" />
+            <ComponentRef Id="C.memfs_dotnet.Program.cs" />
+            <ComponentRef Id="C.passthrough_dotnet.Program.cs" />
+            <ComponentRef Id="C.passthrough_dotnet.sln" />
+            <ComponentRef Id="C.passthrough_dotnet.csproj" />
+            <ComponentRef Id="C.notifyfs_dotnet.Program.cs" />
+            <ComponentRef Id="C.notifyfs_dotnet.sln" />
+            <ComponentRef Id="C.notifyfs_dotnet.csproj" />
+        </ComponentGroup>
+
+        <Feature
+            Id="F.Main"
+            Level="1"
+            Title="$(var.MyProductName) $(var.MyProductVersion)"
+            Description="$(var.MyDescription)"
+            Display="expand"
+            ConfigurableDirectory="INSTALLDIR"
+            AllowAdvertise="no"
+            InstallDefault="local"
+            Absent="disallow">
+            <ComponentRef Id="C.INSTALLDIR" />
+            <ComponentRef Id="C.License.txt" />
+            <ComponentRef Id="C.SXSDIR" />
+            <Feature
+                Id="F.User"
+                Level="1"
+                Title="Core"
+                Description="The core $(var.MyProductName) files."
+                AllowAdvertise="no"
+                InstallDefault="local"
+                Absent="disallow">
+                <ComponentGroupRef Id="C.$(var.MyProductName).bin" />
+                <ComponentGroupRef Id="C.$(var.MyProductName).net" />
+            </Feature>
+            <!--
+            <Feature
+                Id="F.Net"
+                Level="10"
+                Title=".NET"
+                Description="The managed $(var.MyProductName) files."
+                AllowAdvertise="no"
+                InstallDefault="local"
+                Absent="allow">
+                <ComponentGroupRef Id="C.$(var.MyProductName).net" />
+            </Feature>
+            -->
+            <Feature
+                Id="F.Developer"
+                Level="1000"
+                Title="Developer"
+                Description="Additional files needed for development."
+                AllowAdvertise="no"
+                InstallDefault="local"
+                Absent="allow">
+                <ComponentGroupRef Id="C.$(var.MyProductName).inc" />
+                <ComponentGroupRef Id="C.$(var.MyProductName).lib" />
+                <ComponentGroupRef Id="C.$(var.MyProductName).smp" />
+                <ComponentGroupRef Id="C.$(var.MyProductName).smp.net" />
+            </Feature>
+            <Feature
+                Id="F.KernelDeveloper"
+                Level="1000"
+                Title="Kernel Developer"
+                Description="Additional files needed for in-kernel development."
+                AllowAdvertise="no"
+                InstallDefault="local"
+                Absent="allow">
+                <ComponentGroupRef Id="C.$(var.MyProductName).opt.fsext" />
+            </Feature>
+            <Feature
+                Id="F.Cygfuse"
+                Level="1000"
+                Title="FUSE for Cygwin"
+                Description="From a Cygwin prompt change to &lt;InstallDir&gt;/opt/cygfuse and run install.sh."
+                AllowAdvertise="no"
+                InstallDefault="local"
+                Absent="allow">
+                <ComponentGroupRef Id="C.$(var.MyProductName).opt.fuse" />
+            </Feature>
+        </Feature>
+
+        <WixVariable Id="WixUIBannerBmp" Value="wixbanner.bmp" />
+        <WixVariable Id="WixUIDialogBmp" Value="wixdialog-$(var.MyProductStage).bmp" />
+        <UI Id="FeatureTree">
+            <UIRef Id="WixUI_FeatureTree" />
+            <!-- skip the license agreement dialog; higher Order takes priority (weird) -->
+            <Publish
+                Dialog="WelcomeDlg"
+                Control="Next"
+                Event="NewDialog"
+                Value="CustomizeDlg"
+                Order="10">NOT Installed</Publish>
+            <Publish
+                Dialog="CustomizeDlg"
+                Control="Back"
+                Event="NewDialog"
+                Value="WelcomeDlg"
+                Order="10">NOT Installed</Publish>
+        </UI>
+
+        <!-- Custom Actions -->
+        <Binary Id="CustomActions" SourceFile="..\build\$(var.Configuration)\CustomActions.dll" />
+
+        <!-- InstanceID computes a unique per-installer-run ID -->
+        <CustomAction
+            Id="Action.InstanceID"
+            BinaryKey="CustomActions"
+            DllEntry="InstanceID"
+            Execute="firstSequence"
+            Return="check" />
+        <InstallExecuteSequence>
+            <Custom Action="Action.InstanceID" Before="AppSearch" />
+        </InstallExecuteSequence>
+        <InstallUISequence>
+            <Custom Action="Action.InstanceID" Before="AppSearch" />
+        </InstallUISequence>
+
+        <!-- ServiceRunning determines if the old driver (that did not support unload) is running. -->
+        <CustomAction
+            Id="Params.ServiceRunning"
+            Property="ServiceRunning"
+            Value="$(var.MyProductName)" />
+        <CustomAction
+            Id="Action.ServiceRunning"
+            BinaryKey="CustomActions"
+            DllEntry="ServiceRunning"
+            Execute="immediate"
+            Return="ignore" />
+        <CustomAction
+            Id="Action.ServiceRunning.Error"
+            Error="A component from an older version of $(var.MyProductName) that cannot be upgraded appears to be running. If you just uninstalled an older version of $(var.MyProductName) please restart your computer." />
+        <InstallExecuteSequence>
+            <Custom Action="Params.ServiceRunning" Before="Action.ServiceRunning" />
+            <Custom Action="Action.ServiceRunning" After="LaunchConditions">
+                <![CDATA[NOT Installed]]>
+            </Custom>
+            <Custom Action="Action.ServiceRunning.Error" After="Action.ServiceRunning">
+                <![CDATA[NOT Installed AND (0 <> ServiceRunning)]]>
+            </Custom>
+        </InstallExecuteSequence>
+        <InstallUISequence>
+            <Custom Action="Params.ServiceRunning" Before="Action.ServiceRunning" />
+            <Custom Action="Action.ServiceRunning" After="LaunchConditions">
+                <![CDATA[NOT Installed]]>
+            </Custom>
+            <Custom Action="Action.ServiceRunning.Error" After="Action.ServiceRunning">
+                <![CDATA[NOT Installed AND (0 <> ServiceRunning)]]>
+            </Custom>
+        </InstallUISequence>
+
+        <!-- InstallSymlinks installs SxS symlinks -->
+        <SetProperty
+            Id="Deferred.InstallSymlinks"
+            Value='InstallJunctions "[INSTALLDIR]\" "[SXSDIR]\" bin'
+            Before="Deferred.InstallSymlinks"
+            Sequence="execute" />
+        <CustomAction
+            Id="Deferred.InstallSymlinks"
+            BinaryKey="CustomActions"
+            DllEntry="DeferredAction"
+            Execute="deferred"
+            Impersonate="no"
+            Return="check" />
+        <SetProperty
+            Id="Rollback.InstallSymlinks"
+            Value='RemoveFiles "[INSTALLDIR]\" bin'
+            Before="Rollback.InstallSymlinks"
+            Sequence="execute" />
+        <CustomAction
+            Id="Rollback.InstallSymlinks"
+            BinaryKey="CustomActions"
+            DllEntry="DeferredAction"
+            Execute="rollback"
+            Impersonate="no"
+            Return="ignore" />
+        <InstallExecuteSequence>
+            <!--
+                deferred: `InstallSymlinks` on install or repair
+                rollback: `RemoveSymlinks` on install only
+            -->
+            <Custom Action="Rollback.InstallSymlinks" After="InstallFiles">
+                NOT Installed
+            </Custom>
+            <Custom Action="Deferred.InstallSymlinks" After="Rollback.InstallSymlinks">
+                (NOT Installed) OR REINSTALL
+            </Custom>
+        </InstallExecuteSequence>
+
+        <!-- RemoveSymlinks removes SxS symlinks -->
+        <SetProperty
+            Id="Deferred.RemoveSymlinks"
+            Value='RemoveFiles "[INSTALLDIR]\" bin'
+            Before="Deferred.RemoveSymlinks"
+            Sequence="execute" />
+        <CustomAction
+            Id="Deferred.RemoveSymlinks"
+            BinaryKey="CustomActions"
+            DllEntry="DeferredAction"
+            Execute="deferred"
+            Impersonate="no"
+            Return="ignore" />
+        <SetProperty
+            Id="Rollback.RemoveSymlinks"
+            Value='InstallJunctions "[INSTALLDIR]\" "[SXSDIR]\" bin'
+            Before="Rollback.RemoveSymlinks"
+            Sequence="execute" />
+        <CustomAction
+            Id="Rollback.RemoveSymlinks"
+            BinaryKey="CustomActions"
+            DllEntry="DeferredAction"
+            Execute="rollback"
+            Impersonate="no"
+            Return="check" />
+        <InstallExecuteSequence>
+            <!--
+                deferred: `RemoveSymlinks` on uninstall
+                rollback: `InstallSymlinks` on uninstall
+            -->
+            <Custom Action="Rollback.RemoveSymlinks" Before="RemoveFiles">
+                REMOVE ~= "ALL"
+            </Custom>
+            <Custom Action="Deferred.RemoveSymlinks" After="Rollback.RemoveSymlinks">
+                REMOVE ~= "ALL"
+            </Custom>
+        </InstallExecuteSequence>
+
+        <!--
+            Specify WIXFAILWHENDEFERRED=1 on the msiexec cmdline for rollback testing.
+            See http://tinyurl.com/yxkaywek
+        -->
+        <!--
+        <Property Id="WIXFAILWHENDEFERRED" Value="0" Secure="yes" />
+        <CustomActionRef Id="WixFailWhenDeferred" />
+        -->
+    </Product>
+</Wix>

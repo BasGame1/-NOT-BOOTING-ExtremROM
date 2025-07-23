@@ -1,0 +1,12 @@
+EXPORTS
+    DllRegisterServer   PRIVATE
+    DllUnregisterServer PRIVATE
+    NPGetCaps           PRIVATE
+    NPGetConnection     PRIVATE
+    NPAddConnection     PRIVATE
+    NPAddConnection3    PRIVATE
+    NPCancelConnection  PRIVATE
+    NPOpenEnum          PRIVATE
+    NPEnumResource      PRIVATE
+    NPCloseEnum         PRIVATE
+    NPGetUniversalName  PRIVATE
